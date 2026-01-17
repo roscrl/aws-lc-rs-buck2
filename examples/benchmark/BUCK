@@ -1,0 +1,10 @@
+# Example: Simple Crypto Benchmark
+
+rust_binary(
+    name = "benchmark",
+    srcs = ["main.rs"],
+    deps = [
+        "//aws-lc-rs/aws-lc-rs:aws-lc-rs",
+    ],
+    edition = "2021",
+)

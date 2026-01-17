@@ -1,0 +1,11 @@
+# Example: File Encryption
+# Demonstrates AES-256-GCM authenticated encryption
+
+rust_binary(
+    name = "encrypt",
+    srcs = ["main.rs"],
+    deps = [
+        "//aws-lc-rs/aws-lc-rs:aws-lc-rs",
+    ],
+    edition = "2021",
+)

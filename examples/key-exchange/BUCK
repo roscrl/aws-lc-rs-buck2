@@ -1,0 +1,11 @@
+# Example: Key Exchange
+# Demonstrates X25519 and ECDH key agreement
+
+rust_binary(
+    name = "key-exchange",
+    srcs = ["main.rs"],
+    deps = [
+        "//aws-lc-rs/aws-lc-rs:aws-lc-rs",
+    ],
+    edition = "2021",
+)

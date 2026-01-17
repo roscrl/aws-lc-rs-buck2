@@ -1,0 +1,11 @@
+# Example: Hello Crypto
+# A minimal example showing how to use aws-lc-rs
+
+rust_binary(
+    name = "hello-crypto",
+    srcs = ["main.rs"],
+    deps = [
+        "//aws-lc-rs/aws-lc-rs:aws-lc-rs",
+    ],
+    edition = "2021",
+)

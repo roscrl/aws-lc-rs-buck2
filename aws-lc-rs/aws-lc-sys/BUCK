@@ -1,0 +1,99 @@
+load(":sources.bzl", "UNIVERSAL_SRCS", "LINUX_X86_64_ASM", "LINUX_AARCH64_ASM", 
+     "APPLE_X86_64_ASM", "APPLE_AARCH64_ASM", "LINUX_X86_ASM", "LINUX_ARM_ASM",
+     "WIN_X86_64_ASM", "WIN_AARCH64_ASM", "WIN_X86_ASM")
+load(":defines.bzl", "OPENSSL_DEFINES", "BORINGSSL_DEFINES", "LINUX_DEFINES", 
+     "MACOS_DEFINES", "COMMON_CFLAGS_LINUX", "COMMON_CFLAGS_MACOS", "PREFIX_INCLUDE")
+
+JITTERENTROPY_SRCS = [
+    "aws-lc/third_party/jitterentropy/jitterentropy-base.c",
+    "aws-lc/third_party/jitterentropy/jitterentropy-gcd.c",
+    "aws-lc/third_party/jitterentropy/jitterentropy-health.c",
+    "aws-lc/third_party/jitterentropy/jitterentropy-noise.c",
+    "aws-lc/third_party/jitterentropy/jitterentropy-sha3.c",
+    "aws-lc/third_party/jitterentropy/jitterentropy-timer.c",
+]
+
+MAIN_SRCS = [s for s in UNIVERSAL_SRCS if "jitterentropy" not in s]
+
+ASM_SRCS = select({
+    "prelude//os:linux": select({
+        "prelude//cpu:x86_64": LINUX_X86_64_ASM,
+        "prelude//cpu:arm64": LINUX_AARCH64_ASM,
+        "DEFAULT": [],
+    }),
+    "prelude//os:macos": select({
+        "prelude//cpu:x86_64": APPLE_X86_64_ASM,
+        "prelude//cpu:arm64": APPLE_AARCH64_ASM,
+        "DEFAULT": [],
+    }),
+    "DEFAULT": [],
+})
+
+PLATFORM_DEFINES = select({
+    "prelude//os:linux": LINUX_DEFINES,
+    "prelude//os:macos": MACOS_DEFINES,
+    "DEFAULT": [],
+})
+
+PLATFORM_CFLAGS = select({
+    "prelude//os:linux": COMMON_CFLAGS_LINUX,
+    "prelude//os:macos": COMMON_CFLAGS_MACOS,
+    "DEFAULT": [],
+})
+
+INCLUDE_DIRS = [
+    "aws-lc/include",
+    "generated-include", 
+    "include",
+    "aws-lc/crypto",
+    "aws-lc/third_party/jitterentropy",
+    "aws-lc/third_party/s2n-bignum/include",
+]
+
+cxx_library(
+    name = "jitterentropy",
+    srcs = JITTERENTROPY_SRCS,
+    include_directories = INCLUDE_DIRS,
+    preprocessor_flags = ["-DAWSLC=1"] + BORINGSSL_DEFINES + [
+        "-include", "aws-lc-rs/aws-lc-sys/generated-include/openssl/boringssl_prefix_symbols_asm.h"
+    ],
+    compiler_flags = ["-O0", "-fwrapv", "-fvisibility=hidden"],
+    preferred_linkage = "static",
+    visibility = [":aws_lc_crypto"],
+)
+
+C_SOURCES = [s for s in MAIN_SRCS if s.endswith(".c")]
+
+cxx_library(
+    name = "aws_lc_crypto",
+    srcs = C_SOURCES + ASM_SRCS,
+    include_directories = INCLUDE_DIRS,
+    preprocessor_flags = OPENSSL_DEFINES + BORINGSSL_DEFINES + PLATFORM_DEFINES + [
+        "-include", "aws-lc-rs/aws-lc-sys/generated-include/openssl/boringssl_prefix_symbols_asm.h"
+    ],
+    compiler_flags = PLATFORM_CFLAGS,
+    deps = [":jitterentropy"],
+    preferred_linkage = "static",
+    visibility = ["PUBLIC"],
+)
+
+rust_library(
+    name = "aws-lc-sys",
+    srcs = glob(["src/**/*.rs"]),
+    deps = [":aws_lc_crypto", "//third-party/rust:paste"],
+    edition = "2021",
+    rustc_flags = select({
+        "prelude//os:linux": select({
+            "prelude//cpu:x86_64": ["--cfg=x86_64_unknown_linux_gnu"],
+            "prelude//cpu:arm64": ["--cfg=aarch64_unknown_linux_gnu"],
+            "DEFAULT": [],
+        }),
+        "prelude//os:macos": select({
+            "prelude//cpu:x86_64": ["--cfg=x86_64_apple_darwin"],
+            "prelude//cpu:arm64": ["--cfg=aarch64_apple_darwin"],
+            "DEFAULT": [],
+        }),
+        "DEFAULT": [],
+    }),
+    visibility = ["PUBLIC"],
+)

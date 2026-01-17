@@ -1,0 +1,13 @@
+rust_library(
+    name = "aws-lc-rs",
+    srcs = glob(["src/**/*.rs"]),
+    deps = [
+        "//aws-lc-rs/aws-lc-sys:aws-lc-sys",
+        "//third-party/rust:zeroize",
+        "//third-party/rust:untrusted",
+        "//third-party/rust:paste",
+        "//third-party/rust:mirai-annotations",
+    ],
+    edition = "2021",
+    visibility = ["PUBLIC"],
+)

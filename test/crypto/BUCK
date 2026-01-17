@@ -1,0 +1,8 @@
+rust_binary(
+    name = "test_crypto",
+    srcs = ["main.rs"],
+    deps = [
+        "//aws-lc-rs/aws-lc-rs:aws-lc-rs",
+    ],
+    edition = "2021",
+)

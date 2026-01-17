@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-macos:
+    runs-on: macos-14  # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build aws-lc-rs
+        run: |
+          nix develop -c buck2 build //aws-lc-rs/aws-lc-rs:aws-lc-rs --target-platforms root//platforms:default
+
+      - name: Run tests
+        run: |
+          nix develop -c buck2 run //test/crypto:test_crypto --target-platforms root//platforms:default
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build aws-lc-rs
+        run: |
+          nix develop -c buck2 build //aws-lc-rs/aws-lc-rs:aws-lc-rs --target-platforms root//platforms:default
+
+      - name: Run tests
+        run: |
+          nix develop -c buck2 run //test/crypto:test_crypto --target-platforms root//platforms:default
+
+  build-linux-docker:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y curl git clang lld python3 zstd
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install Buck2
+        run: |
+          curl -sL https://github.com/facebook/buck2/releases/download/2025-12-01/buck2-x86_64-unknown-linux-gnu.zst | zstd -d > /usr/local/bin/buck2
+          chmod +x /usr/local/bin/buck2
+
+      - name: Build aws-lc-rs
+        run: |
+          buck2 build //aws-lc-rs/aws-lc-rs:aws-lc-rs --target-platforms root//platforms:default
+
+      - name: Run tests
+        run: |
+          buck2 run //test/crypto:test_crypto --target-platforms root//platforms:default

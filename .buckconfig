@@ -1,0 +1,17 @@
+[cells]
+root = .
+prelude = prelude
+toolchains = toolchains
+none = none
+
+[cell_aliases]
+config = prelude
+ovr_config = prelude
+fbcode = prelude
+fbsource = prelude
+fbcode_macros = prelude
+buck = prelude
+
+[build]
+execution_platforms = root//platforms:default
+default_target_platform = root//platforms:default

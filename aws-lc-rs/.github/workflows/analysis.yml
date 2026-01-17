@@ -1,0 +1,314 @@
+name: analysis
+
+on:
+  push:
+    branches:
+      - '*'
+      - '!generate/aws-lc-*'
+  pull_request:
+    branches:
+      - '*'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+  # We can pin the version if nightly is too unstable.
+  # Otherwise, we test against the latest version.
+  RUST_NIGHTLY_TOOLCHAIN: nightly
+  RUST_SCRIPT_NIGHTLY_TOOLCHAIN: nightly-2024-05-22
+  # Mirai version tag, updates this whenever a new version
+  # is released.
+  MIRAI_TOOLCHAIN: nightly-2023-05-09
+  MIRAI_TAG: v1.1.8
+
+jobs:
+  rustfmt:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
+          components: rustfmt
+      - name: Set Rust toolchain override
+        run: rustup override set ${{ steps.toolchain.outputs.name }}
+
+      - name: Run cargo fmt
+        run: cargo fmt -- --check --verbose
+
+  clippy:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # By default, Clippy will lint he dependencies
+        crate_dir: [ "aws-lc-rs" ]
+        features:
+          - "--features bindgen,unstable"
+          - "--features bindgen,unstable,fips"
+          - "--no-default-features --features aws-lc-sys"
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
+          components: clippy
+      - name: Set Rust toolchain override
+        run: rustup override set ${{ steps.toolchain.outputs.name }}
+      - name: Run cargo clippy
+        working-directory: ${{ matrix.crate_dir }}
+        run: cargo clippy ${{ matrix.features }} --all-targets -- -W clippy::all -W clippy::pedantic -D warnings
+
+  apidiff:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    env:
+      AWS_LC_SYS_CMAKE_BUILDER: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        crate_dir: [ "aws-lc-sys", "aws-lc-fips-sys", "aws-lc-rs" ]
+        diff_target: [ "branch", "published" ]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+      - uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
+      - name: Set Rust toolchain override
+        run: rustup override set ${{ steps.toolchain.outputs.name }}
+      - name: Install cargo-public-api
+        run: cargo install --locked cargo-public-api
+      - name: Perform API Diff (Target Branch)
+        if: matrix.diff_target == 'branch'
+        working-directory: ${{ matrix.crate_dir }}
+        run: cargo public-api diff --deny changed --deny removed ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+      - name: Perform API Diff (Published)
+        if: matrix.diff_target == 'published'
+        working-directory: ${{ matrix.crate_dir }}
+        shell: bash
+        run: |
+          CRATE_NAME="${{ matrix.crate_dir }}"
+          CRATE_VERSION=$(cargo search --limit 1 ${CRATE_NAME} | head -n 1 | sed -e 's/[^"]*"\([^"]*\)".*/\1/')
+          cargo public-api diff --deny changed --deny removed "${CRATE_VERSION}"
+
+  dependency-review:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Repository'
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - name: 'Dependency Review'
+        uses: actions/dependency-review-action@v3
+        with:
+          allow-licenses: Apache-2.0, ISC, MIT, MIT-0
+
+  udeps:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+
+      - uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
+      - name: Set Rust toolchain override
+        run: rustup override set ${{ steps.toolchain.outputs.name }}
+
+      - name: Install cargo-udeps
+        run: cargo install cargo-udeps
+
+      - name: Run cargo udeps
+        # we only use openssl when the openssl-benchmarks feature is enabled.
+        # openssl is a dev-dependency so it can't be optional.
+        run: cargo udeps --workspace --all-targets --features openssl-benchmarks
+        env:
+          RUSTC_WRAPPER: ""
+
+  bindgen-dependency:
+    if: github.repository_owner == 'aws'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-13, macos-14-xlarge, windows-latest ]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run cargo tree
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          if cargo tree -e build -p aws-lc-sys | grep -q bindgen; then 
+            exit 1 # bindgen should not be listed
+          else 
+            exit 0
+          fi
+      - name: Run cargo tree
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          $output = cargo tree -e build -p aws-lc-sys | Select-String -Pattern "bindgen"
+          if ($null -eq $output) {
+            exit 0  # bindgen should not be listed
+          } else {
+            exit 1
+          }
+
+  bindgen-fips-dependency:
+    if: github.repository_owner == 'aws'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-13, macos-14-xlarge, windows-latest ]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run cargo tree
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          if cargo tree -e build -p aws-lc-fips-sys | grep -q bindgen; then 
+            exit 1 # bindgen should not be listed
+          else 
+            exit 0
+          fi
+      - name: Run cargo tree
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          $output = cargo tree -e build -p aws-lc-fips-sys | Select-String -Pattern "bindgen"
+          if ($null -eq $output) {
+            exit 1  # bindgen should be listed
+          } else {
+            exit 0
+          }
+
+  mirai-analysis:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+          lfs: true
+
+      - uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ env.MIRAI_TOOLCHAIN }}
+          components: rust-src, rustc-dev, llvm-tools-preview
+      - name: Set Rust toolchain override
+        run: rustup override set ${{ steps.toolchain.outputs.name }}
+
+      # https://github.com/facebookexperimental/MIRAI/blob/main/documentation/InstallationGuide.md#installing-mirai-into-cargo
+      - name: Install MIRAI
+        run: |
+          MIRAI_TMP_SRC=$(mktemp -d)
+          git clone --depth 1 --branch ${{ env.MIRAI_TAG }} https://github.com/facebookexperimental/MIRAI.git ${MIRAI_TMP_SRC}
+          pushd ${MIRAI_TMP_SRC}
+          cargo install --locked --force --path ./checker --no-default-features
+          popd
+          rm -rf ${MIRAI_TMP_SRC}
+
+      - name: Run MIRAI
+        working-directory: ./aws-lc-rs
+        run: |
+          cargo update
+          cargo update -p clap --precise 4.4.18
+          cargo mirai
+
+  minimal-versions:
+    if: github.repository_owner == 'aws'
+    name: Resolve the dependencies to the minimum SemVer version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crate: [ 'aws-lc-rs', 'aws-lc-sys', 'aws-lc-fips-sys' ]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+          lfs: true
+      - uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
+      - name: Set Rust toolchain override
+        run: rustup override set ${{ steps.toolchain.outputs.name }}
+      - name: Setup to use minimal versions
+        working-directory: ./${{ matrix.crate }}
+        run: cargo update -Z minimal-versions
+      - name: Build with minimal versions
+        working-directory: ./${{ matrix.crate }}
+        run: cargo --locked check
+
+  copyright:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check
+        run: |
+          ./scripts/tools/copyright_check.sh
+
+  semver-checks:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - name: Check semver (Default Features)
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: aws-lc-rs
+          feature-group: default-features
+      - name: Check semver (FIPS)
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: aws-lc-rs
+          feature-group: only-explicit-features
+          features: fips
+  metadata-checks:
+    if: github.repository_owner == 'aws'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ env.RUST_SCRIPT_NIGHTLY_TOOLCHAIN }}
+      - name: Set Rust toolchain override
+        run: rustup override set ${{ steps.toolchain.outputs.name }}
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - name: aws-lc-rs links
+        run: |
+          VERSION=$(scripts/tools/cargo-dig.rs aws-lc-rs/Cargo.toml -v)
+          LINKS_LINE=$(echo links = \"aws_lc_rs_${VERSION//./_}_sys\")
+          grep "${LINKS_LINE}" aws-lc-rs/Cargo.toml

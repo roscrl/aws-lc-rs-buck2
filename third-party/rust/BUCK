@@ -1,0 +1,38 @@
+# Third-party Rust dependencies
+
+rust_library(
+    name = "zeroize",
+    srcs = glob(["zeroize-1.8.1/src/**/*.rs"]),
+    crate_root = "zeroize-1.8.1/src/lib.rs",
+    edition = "2021",
+    # Enable alloc feature for Box<[T]> impl
+    rustc_flags = [
+        "--cfg=feature=\"alloc\"",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+rust_library(
+    name = "untrusted",
+    srcs = glob(["untrusted-0.9.0/src/**/*.rs"]),
+    crate_root = "untrusted-0.9.0/src/lib.rs", 
+    edition = "2021",
+    visibility = ["PUBLIC"],
+)
+
+rust_library(
+    name = "paste",
+    srcs = glob(["paste-1.0.11/src/**/*.rs"]),
+    crate_root = "paste-1.0.11/src/lib.rs",
+    edition = "2018",
+    proc_macro = True,
+    visibility = ["PUBLIC"],
+)
+
+rust_library(
+    name = "mirai-annotations",
+    srcs = glob(["mirai-annotations-1.12.0/src/**/*.rs"]),
+    crate_root = "mirai-annotations-1.12.0/src/lib.rs",
+    edition = "2021",
+    visibility = ["PUBLIC"],
+)

@@ -1,0 +1,5 @@
+rust_library(
+    name = "hello",
+    srcs = ["lib.rs"],
+    visibility = ["PUBLIC"],
+)

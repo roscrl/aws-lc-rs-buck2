@@ -1,0 +1,24 @@
+# Buck2 outputs
+buck-out/
+.buck-out/
+
+# Nix
+result
+result-*
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large binary in prelude
+prelude/ide_integrations/visual_studio/msvs/absolutize_path.exe
+
+# Releases
+releases/
