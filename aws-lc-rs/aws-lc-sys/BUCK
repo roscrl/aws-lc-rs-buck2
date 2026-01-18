@@ -55,7 +55,7 @@ cxx_library(
     srcs = JITTERENTROPY_SRCS,
     include_directories = INCLUDE_DIRS,
     preprocessor_flags = ["-DAWSLC=1"] + BORINGSSL_DEFINES + [
-        "-include", "aws-lc-rs/aws-lc-sys/generated-include/openssl/boringssl_prefix_symbols_asm.h"
+        "-include", "aws-lc-rs/aws-lc-sys/generated-include/openssl/boringssl_prefix_symbols.h"
     ],
     compiler_flags = ["-O0", "-fwrapv", "-fvisibility=hidden"],
     preferred_linkage = "static",
@@ -66,15 +66,27 @@ C_SOURCES = [s for s in MAIN_SRCS if s.endswith(".c")]
 
 cxx_library(
     name = "aws_lc_crypto",
-    srcs = C_SOURCES + ASM_SRCS,
+    srcs = C_SOURCES,
+    include_directories = INCLUDE_DIRS,
+    preprocessor_flags = OPENSSL_DEFINES + BORINGSSL_DEFINES + PLATFORM_DEFINES + [
+        "-include", "aws-lc-rs/aws-lc-sys/generated-include/openssl/boringssl_prefix_symbols.h"
+    ],
+    compiler_flags = PLATFORM_CFLAGS,
+    deps = [":jitterentropy", ":aws_lc_crypto_asm"],
+    preferred_linkage = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_library(
+    name = "aws_lc_crypto_asm",
+    srcs = ASM_SRCS,
     include_directories = INCLUDE_DIRS,
     preprocessor_flags = OPENSSL_DEFINES + BORINGSSL_DEFINES + PLATFORM_DEFINES + [
         "-include", "aws-lc-rs/aws-lc-sys/generated-include/openssl/boringssl_prefix_symbols_asm.h"
     ],
     compiler_flags = PLATFORM_CFLAGS,
-    deps = [":jitterentropy"],
     preferred_linkage = "static",
-    visibility = ["PUBLIC"],
+    visibility = [":aws_lc_crypto"],
 )
 
 rust_library(
